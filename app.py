@@ -88,21 +88,26 @@ def make_body_center(shoulder_p, hip_p):
 
 if uploaded_file is not None:
 
-image = Image.open(uploaded_file).convert("RGB")
+    image = Image.open(uploaded_file).convert("RGB")
 
-# スマホ写真は大きすぎるので、最大幅を900pxに縮小
-max_width = 900
-if image.width > max_width:
-    ratio = max_width / image.width
-    new_height = int(image.height * ratio)
-    image = image.resize((max_width, new_height))
+    # スマホ写真は大きすぎるので縮小
+    max_width = 900
 
-image_np = np.array(image)
-h, w, _ = image_np.shape
-st.write("画像を読み込みました")
-st.write("画像サイズ:", w, "×", h)
+    if image.width > max_width:
+        ratio = max_width / image.width
+        new_height = int(image.height * ratio)
+        image = image.resize((max_width, new_height))
+
+    image_np = np.array(image)
+    h, w, _ = image_np.shape
+
+    st.write("画像を読み込みました")
+    st.write("画像サイズ:", w, "×", h)
 
     mp_pose = mp.solutions.pose
+    mp_draw = mp.solutions.drawing_utils
+
+    with mp_pose.Pose(static_image_mode=True) as pose:
     mp_draw = mp.solutions.drawing_utils
 
     with mp_pose.Pose(static_image_mode=True) as pose:
