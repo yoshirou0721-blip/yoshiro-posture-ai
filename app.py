@@ -59,10 +59,6 @@ def to_point(lm, w, h):
 
 
 def choose_back_point(left_p, right_p, facing_right=True):
-    """
-    横向き姿勢で、左右のMediaPipe点のうち後方側を採用する。
-    右向き画像では、画面左側が後方。
-    """
     if facing_right:
         return left_p if left_p[0] <= right_p[0] else right_p
     else:
@@ -70,17 +66,10 @@ def choose_back_point(left_p, right_p, facing_right=True):
 
 
 def choose_lower_point(left_p, right_p):
-    """
-    膝中心・外果は、左右のMediaPipe点のうち下にある点を採用する。
-    """
     return left_p if left_p[1] >= right_p[1] else right_p
 
 
 def make_body_center(shoulder_p, hip_p):
-    """
-    rembgなし版の体の中心点。
-    肩峰〜大転子の中点を使う。
-    """
     center_x = int((shoulder_p[0] + hip_p[0]) / 2)
     center_y = int(shoulder_p[1] + (hip_p[1] - shoulder_p[1]) * 0.5)
     return (center_x, center_y)
@@ -90,9 +79,7 @@ if uploaded_file is not None:
 
     image = Image.open(uploaded_file).convert("RGB")
 
-    # スマホ写真は大きすぎるので縮小
     max_width = 900
-
     if image.width > max_width:
         ratio = max_width / image.width
         new_height = int(image.height * ratio)
@@ -105,9 +92,6 @@ if uploaded_file is not None:
     st.write("画像サイズ:", w, "×", h)
 
     mp_pose = mp.solutions.pose
-    mp_draw = mp.solutions.drawing_utils
-
-    with mp_pose.Pose(static_image_mode=True) as pose:
     mp_draw = mp.solutions.drawing_utils
 
     with mp_pose.Pose(static_image_mode=True) as pose:
@@ -134,24 +118,19 @@ if uploaded_file is not None:
             left_ankle_p = to_point(landmarks[mp_pose.PoseLandmark.LEFT_ANKLE], w, h)
             right_ankle_p = to_point(landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE], w, h)
 
-            # 耳は後方側の耳を採用
             ear_raw_p = choose_back_point(left_ear_p, right_ear_p, True)
 
-            # 肩峰・大転子は後方側のMediaPipe点を採用
             shoulder_p = choose_back_point(left_shoulder_p, right_shoulder_p, True)
             hip_p = choose_back_point(left_hip_p, right_hip_p, True)
 
-            # 膝中心・外果は下にあるMediaPipe点を採用
             knee_p = choose_lower_point(left_knee_p, right_knee_p)
             ankle_p = choose_lower_point(left_ankle_p, right_ankle_p)
 
-            # 耳垂補正
             ear_lobe_p = (
                 ear_raw_p[0] - 30,
                 ear_raw_p[1] + 38
             )
 
-            # rembgなし版：体の中心点は肩峰〜大転子の中点
             center_p = make_body_center(shoulder_p, hip_p)
 
             thoracic_angle = angle_from_vertical(shoulder_p, center_p)
@@ -193,17 +172,14 @@ if uploaded_file is not None:
                 mp_pose.POSE_CONNECTIONS
             )
 
-            # 採用点を赤で表示
             cv2.circle(annotated, shoulder_p, 10, (0, 0, 255), -1)
             cv2.circle(annotated, hip_p, 10, (0, 0, 255), -1)
             cv2.circle(annotated, knee_p, 10, (0, 0, 255), -1)
             cv2.circle(annotated, ankle_p, 10, (0, 0, 255), -1)
 
-            # 耳垂・体の中心点
             cv2.circle(annotated, ear_lobe_p, 10, (0, 255, 255), -1)
             cv2.circle(annotated, center_p, 10, (0, 255, 255), -1)
 
-            # 評価ライン
             cv2.line(annotated, shoulder_p, center_p, (255, 255, 0), 3)
             cv2.line(annotated, center_p, hip_p, (255, 255, 0), 3)
             cv2.line(annotated, shoulder_p, knee_p, (0, 180, 255), 2)
