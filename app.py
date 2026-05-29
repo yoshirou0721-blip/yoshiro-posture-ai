@@ -4,19 +4,21 @@ import cv2
 import numpy as np
 import math
 from PIL import Image
-from rembg import remove
 
 st.title("YOSHIRO 姿勢分析AI V20")
 
 uploaded_file = st.file_uploader("画像を選択", type=["jpg", "jpeg", "png"])
+
 
 def angle_from_vertical(p1, p2):
     dx = p2[0] - p1[0]
     dy = p2[1] - p1[1]
     return abs(round(math.degrees(math.atan2(dx, dy)), 1))
 
+
 def percent(value, max_value):
     return min(round(value / max_value * 100, 1), 100)
+
 
 def judge_lordosis(angle):
     if angle < 10:
@@ -28,12 +30,16 @@ def judge_lordosis(angle):
     else:
         return "重度"
 
+
 def line_x_at_y(p1, p2, y):
     x1, y1 = p1
     x2, y2 = p2
+
     if y2 == y1:
         return x1
+
     return x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+
 
 def position_against_line(point, line_start, line_end):
     px, py = point
@@ -47,49 +53,44 @@ def position_against_line(point, line_start, line_end):
     else:
         return "線上", round(diff, 1)
 
-def find_body_center_from_alpha(alpha, y):
-    h, w = alpha.shape
-    y1 = max(0, y - 5)
-    y2 = min(h, y + 5)
-
-    band = alpha[y1:y2, :]
-    mask = band > 20
-    xs = np.where(mask)[1]
-
-    if len(xs) == 0:
-        return None, None, None
-
-    back_x = int(xs.min())
-    front_x = int(xs.max())
-    body_width = front_x - back_x
-
-    center_x = int(front_x - body_width * 0.45)
-    corrected_back_x = int(front_x - body_width * 0.9)
-
-    return center_x, corrected_back_x, front_x
 
 def to_point(lm, w, h):
     return (int(lm.x * w), int(lm.y * h))
 
+
 def choose_back_point(left_p, right_p, facing_right=True):
+    """
+    横向き姿勢で、左右のMediaPipe点のうち後方側を採用する。
+    右向き画像では、画面左側が後方。
+    """
     if facing_right:
         return left_p if left_p[0] <= right_p[0] else right_p
     else:
         return left_p if left_p[0] >= right_p[0] else right_p
 
+
 def choose_lower_point(left_p, right_p):
+    """
+    膝中心・外果は、左右のMediaPipe点のうち下にある点を採用する。
+    """
     return left_p if left_p[1] >= right_p[1] else right_p
+
+
+def make_body_center(shoulder_p, hip_p):
+    """
+    rembgなし版の体の中心点。
+    肩峰〜大転子の中点を使う。
+    """
+    center_x = int((shoulder_p[0] + hip_p[0]) / 2)
+    center_y = int(shoulder_p[1] + (hip_p[1] - shoulder_p[1]) * 0.5)
+    return (center_x, center_y)
+
 
 if uploaded_file is not None:
 
     image = Image.open(uploaded_file).convert("RGB")
-
-    cutout = remove(image).convert("RGBA")
-    cutout_np = np.array(cutout)
-
     image_np = np.array(image)
     h, w, _ = image_np.shape
-    alpha = cutout_np[:, :, 3]
 
     mp_pose = mp.solutions.pose
     mp_draw = mp.solutions.drawing_utils
@@ -118,13 +119,14 @@ if uploaded_file is not None:
             left_ankle_p = to_point(landmarks[mp_pose.PoseLandmark.LEFT_ANKLE], w, h)
             right_ankle_p = to_point(landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE], w, h)
 
+            # 耳は後方側の耳を採用
             ear_raw_p = choose_back_point(left_ear_p, right_ear_p, True)
 
-            # 肩峰・大転子は後方側
+            # 肩峰・大転子は後方側のMediaPipe点を採用
             shoulder_p = choose_back_point(left_shoulder_p, right_shoulder_p, True)
             hip_p = choose_back_point(left_hip_p, right_hip_p, True)
 
-            # 膝中心・外果は「下にあるMediaPipe点」
+            # 膝中心・外果は下にあるMediaPipe点を採用
             knee_p = choose_lower_point(left_knee_p, right_knee_p)
             ankle_p = choose_lower_point(left_ankle_p, right_ankle_p)
 
@@ -134,20 +136,8 @@ if uploaded_file is not None:
                 ear_raw_p[1] + 38
             )
 
-            # 体の中心点
-            center_y = int(
-                shoulder_p[1] + (hip_p[1] - shoulder_p[1]) * 0.5
-            )
-
-            center_x, back_x, front_x = find_body_center_from_alpha(alpha, center_y)
-
-            if center_x is None:
-                center_p = (
-                    int((shoulder_p[0] + hip_p[0]) / 2),
-                    center_y
-                )
-            else:
-                center_p = (center_x, center_y)
+            # rembgなし版：体の中心点は肩峰〜大転子の中点
+            center_p = make_body_center(shoulder_p, hip_p)
 
             thoracic_angle = angle_from_vertical(shoulder_p, center_p)
             lumbar_angle = angle_from_vertical(center_p, hip_p)
@@ -196,18 +186,14 @@ if uploaded_file is not None:
 
             # 耳垂・体の中心点
             cv2.circle(annotated, ear_lobe_p, 10, (0, 255, 255), -1)
-            cv2.circle(annotated, center_p, 10, (0, 0, 255), -1)
+            cv2.circle(annotated, center_p, 10, (0, 255, 255), -1)
 
-            if back_x is not None and front_x is not None:
-                cv2.circle(annotated, (back_x, center_y), 6, (0, 255, 255), -1)
-                cv2.circle(annotated, (front_x, center_y), 6, (0, 255, 255), -1)
-                cv2.line(annotated, (back_x, center_y), (front_x, center_y), (255, 255, 0), 2)
-
+            # 評価ライン
             cv2.line(annotated, shoulder_p, center_p, (255, 255, 0), 3)
             cv2.line(annotated, center_p, hip_p, (255, 255, 0), 3)
-
             cv2.line(annotated, shoulder_p, knee_p, (0, 180, 255), 2)
             cv2.line(annotated, ear_lobe_p, hip_p, (0, 255, 180), 2)
+            cv2.line(annotated, hip_p, ankle_p, (255, 255, 255), 2)
 
             st.image(
                 annotated,
@@ -244,10 +230,16 @@ if uploaded_file is not None:
             st.subheader("採用ルール")
             st.write("肩峰・大転子：後方側のMediaPipe点")
             st.write("膝中心・外果：下にあるMediaPipe点")
-            st.write("耳垂：補正点")
-            st.write("体の中心点：人物切り抜きから算出")
+            st.write("耳垂：MediaPipe耳点から後下方へ補正")
+            st.write("体の中心点：rembgなし版のため肩峰〜大転子の中点")
 
             st.subheader("取得座標")
+            st.write("鼻:", nose_p)
+
+            st.write("左耳:", left_ear_p)
+            st.write("右耳:", right_ear_p)
+            st.write("耳垂補正:", ear_lobe_p)
+
             st.write("左肩:", left_shoulder_p)
             st.write("右肩:", right_shoulder_p)
             st.write("採用肩峰:", shoulder_p)
@@ -264,7 +256,6 @@ if uploaded_file is not None:
             st.write("右外果:", right_ankle_p)
             st.write("採用外果:", ankle_p)
 
-            st.write("耳垂:", ear_lobe_p)
             st.write("体の中心点:", center_p)
 
         else:
